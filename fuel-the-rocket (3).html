@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Rocket Run</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0A0E27;
+    --panel:#141833;
+    --panel-2:#1D2347;
+    --violet:#7C5CFC;
+    --flare:#FF6B4A;
+    --cyan:#46E8D6;
+    --text:#E8ECFB;
+    --text-dim:#8890B5;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none; touch-action:none;}
+  html,body{margin:0; padding:0; height:100%; overflow:hidden; background:var(--bg); font-family:'Rajdhani',sans-serif; color:var(--text);}
+  #wrap{position:relative; width:100vw; height:100vh;}
+  canvas{position:absolute; inset:0; display:block; width:100%; height:100%;}
+
+  #hud{position:absolute; top:0; left:0; right:0; z-index:2; display:flex; justify-content:space-between; align-items:flex-start; padding: calc(env(safe-area-inset-top,10px) + 8px) 16px 0;}
+  .hud-box{background:rgba(20,24,51,.7); backdrop-filter:blur(4px); border-radius:12px; padding:6px 12px;}
+  .hud-box .lbl{font-size:10px; letter-spacing:2px; color:var(--text-dim); text-transform:uppercase;}
+  .hud-box .val{font-family:'Orbitron'; font-size:18px; font-weight:800; color:var(--cyan);}
+  #speed-val{color:var(--flare);}
+
+  #overlay{position:absolute; inset:0; z-index:5; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding:24px; background:rgba(10,14,39,.88);}
+  #overlay.hidden{display:none;}
+  #overlay h1{font-family:'Orbitron'; font-size:26px; margin:0 0 6px; color:var(--cyan); text-shadow:0 0 20px rgba(70,232,214,.5);}
+  #overlay p{font-family:'Rajdhani'; font-size:15px; color:var(--text-dim); margin:0 0 22px; max-width:280px;}
+  #overlay .score-line{font-family:'Orbitron'; font-size:34px; font-weight:800; margin:6px 0;}
+  #overlay .best-line{font-family:'Rajdhani'; font-size:13px; color:var(--text-dim); margin-bottom:22px;}
+  #overlay button{background:var(--violet); border:none; color:#fff; font-family:'Rajdhani'; font-weight:700; font-size:17px; padding:14px 40px; border-radius:14px; box-shadow:0 6px 20px rgba(124,92,252,.4);}
+  .hint{margin-top:18px; font-size:12px; color:var(--text-dim); letter-spacing:1px;}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game"></canvas>
+
+  <div id="hud">
+    <div class="hud-box">
+      <div class="lbl">Дистанция</div>
+      <div class="val" id="score-val">0</div>
+    </div>
+    <div class="hud-box">
+      <div class="lbl">Скорость</div>
+      <div class="val" id="speed-val">x1.0</div>
+    </div>
+  </div>
+
+  <div id="overlay">
+    <h1>🚀 ROCKET RUN</h1>
+    <p>Уворачивайся от астероидов, лови топливные баки. Чем дальше летишь — тем быстрее становится гонка.</p>
+    <button id="start-btn">СТАРТ</button>
+    <div class="hint">Тапай сверху / снизу экрана, чтобы сменить полосу</div>
+  </div>
+</div>
+
+<script>
+const tg = window.Telegram ? window.Telegram.WebApp : null;
+if(tg){ tg.ready(); tg.expand(); try{tg.setHeaderColor('#0A0E27'); tg.setBackgroundColor('#0A0E27');}catch(e){} }
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+let W, H, LANE_Y = [];
+function resize(){
+  W = canvas.width = window.innerWidth * devicePixelRatio;
+  H = canvas.height = window.innerHeight * devicePixelRatio;
+  canvas.style.width = window.innerWidth+'px';
+  canvas.style.height = window.innerHeight+'px';
+  LANE_Y = [H*0.32, H*0.5, H*0.68];
+}
+window.addEventListener('resize', resize);
+resize();
+
+// ---------- звёзды фон ----------
+let stars = [];
+function initStars(){
+  stars = [];
+  for(let i=0;i<80;i++){
+    stars.push({x:Math.random()*W, y:Math.random()*H, r:Math.random()*2*devicePixelRatio+0.5, s:Math.random()*2+1});
+  }
+}
+initStars();
+
+// ---------- состояние игры ----------
+const ROCKET_X = ()=> W*0.18;
+let state = 'idle'; // idle | playing | dead
+let lane = 1; // 0,1,2
+let laneY = LANE_Y[1];
+let targetY = LANE_Y[1];
+let score = 0;
+let speed = 6; // px per frame base (scaled by devicePixelRatio outside)
+let spawnTimer = 0;
+let spawnInterval = 70;
+let obstacles = []; // {x,y,type:'rock'|'fuel', r}
+let particles = [];
+let best = parseInt(localStorage.getItem('rocket_run_best') || '0', 10);
+
+function fmt(n){ return Math.floor(n).toLocaleString('ru-RU'); }
+
+function resetGame(){
+  lane = 1; laneY = LANE_Y[1]; targetY = LANE_Y[1];
+  score = 0; speed = 6*devicePixelRatio; spawnTimer=0; spawnInterval=70;
+  obstacles = []; particles = [];
+}
+
+function startGame(){
+  resetGame();
+  state = 'playing';
+  document.getElementById('overlay').classList.add('hidden');
+}
+
+function endGame(){
+  state = 'dead';
+  if(tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('error');
+  const finalScore = Math.floor(score);
+  if(finalScore > best){ best = finalScore; localStorage.setItem('rocket_run_best', best); }
+  const ov = document.getElementById('overlay');
+  ov.innerHTML = `
+    <h1>💥 СТОЛКНОВЕНИЕ</h1>
+    <div class="score-line">${fmt(finalScore)} м</div>
+    <div class="best-line">Рекорд: ${fmt(best)} м</div>
+    <button id="start-btn">ЕЩЁ РАЗ</button>
+    <div class="hint">Тапай сверху / снизу экрана, чтобы сменить полосу</div>
+  `;
+  ov.classList.remove('hidden');
+  document.getElementById('start-btn').addEventListener('click', startGame);
+}
+
+document.getElementById('start-btn').addEventListener('click', startGame);
+
+// ---------- управление: тап сверху/снизу экрана или свайп ----------
+let touchStartY = null;
+window.addEventListener('pointerdown', (e)=>{
+  if(state !== 'playing'){ return; }
+  touchStartY = e.clientY;
+});
+window.addEventListener('pointerup', (e)=>{
+  if(state !== 'playing' || touchStartY===null) return;
+  const dy = e.clientY - touchStartY;
+  if(Math.abs(dy) > 30){
+    if(dy < 0) changeLane(-1); else changeLane(1);
+  } else {
+    if(e.clientY < window.innerHeight/2) changeLane(-1); else changeLane(1);
+  }
+  touchStartY = null;
+});
+
+function changeLane(dir){
+  const newLane = Math.max(0, Math.min(2, lane+dir));
+  if(newLane !== lane){
+    lane = newLane;
+    targetY = LANE_Y[lane];
+    if(tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+  }
+}
+
+// ---------- спавн препятствий ----------
+function spawnObstacle(){
+  const isFuel = Math.random() < 0.22;
+  const laneIdx = Math.floor(Math.random()*3);
+  obstacles.push({
+    x: W + 60*devicePixelRatio,
+    y: LANE_Y[laneIdx],
+    type: isFuel ? 'fuel' : 'rock',
+    r: (isFuel? 16:20) * devicePixelRatio,
+    spin: Math.random()*Math.PI*2
+  });
+}
+
+function spawnParticles(x,y,color,n){
+  for(let i=0;i<n;i++){
+    particles.push({
+      x, y,
+      vx:(Math.random()-0.5)*6*devicePixelRatio,
+      vy:(Math.random()-0.5)*6*devicePixelRatio,
+      life:30, color
+    });
+  }
+}
+
+// ---------- игровой цикл ----------
+function update(){
+  if(state !== 'playing') return;
+
+  laneY += (targetY - laneY)*0.18;
+
+  score += speed/devicePixelRatio*0.06;
+  speed += 0.0025*devicePixelRatio;
+  spawnInterval = Math.max(26, 70 - score*0.05);
+
+  spawnTimer++;
+  if(spawnTimer > spawnInterval){
+    spawnTimer = 0;
+    spawnObstacle();
+  }
+
+  const rx = ROCKET_X();
+  const rr = 22*devicePixelRatio;
+
+  for(let i=obstacles.length-1;i>=0;i--){
+    const o = obstacles[i];
+    o.x -= speed;
+    o.spin += 0.06;
+    if(o.x < -60*devicePixelRatio){ obstacles.splice(i,1); continue; }
+
+    const dx = o.x - rx, dy = o.y - laneY;
+    const dist = Math.sqrt(dx*dx+dy*dy);
+    if(dist < rr + o.r*0.7){
+      if(o.type === 'fuel'){
+        score += 40;
+        spawnParticles(o.x,o.y,'#46E8D6',14);
+        if(tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred('light');
+        obstacles.splice(i,1);
+      } else {
+        spawnParticles(o.x,o.y,'#FF6B4A',22);
+        obstacles.splice(i,1);
+        endGame();
+        return;
+      }
+    }
+  }
+
+  for(let i=particles.length-1;i>=0;i--){
+    const p = particles[i];
+    p.x += p.vx; p.y += p.vy; p.life--;
+    if(p.life<=0) particles.splice(i,1);
+  }
+
+  stars.forEach(s=>{ s.x -= s.s*devicePixelRatio*(speed/(6*devicePixelRatio)); if(s.x<0){ s.x = W; s.y = Math.random()*H; } });
+
+  document.getElementById('score-val').textContent = fmt(score);
+  document.getElementById('speed-val').textContent = 'x'+(speed/(6*devicePixelRatio)).toFixed(1);
+}
+
+function drawRocket(x,y){
+  ctx.save();
+  ctx.translate(x,y);
+  const flameLen = 18 + Math.random()*10;
+  ctx.beginPath();
+  ctx.moveTo(-18*devicePixelRatio,-8*devicePixelRatio);
+  ctx.lineTo(-18*devicePixelRatio-flameLen*devicePixelRatio,0);
+  ctx.lineTo(-18*devicePixelRatio,8*devicePixelRatio);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(255,107,74,0.85)';
+  ctx.fill();
+
+  ctx.beginPath();
+  ctx.moveTo(24*devicePixelRatio,0);
+  ctx.lineTo(-6*devicePixelRatio,-12*devicePixelRatio);
+  ctx.lineTo(-18*devicePixelRatio,-8*devicePixelRatio);
+  ctx.lineTo(-18*devicePixelRatio,8*devicePixelRatio);
+  ctx.lineTo(-6*devicePixelRatio,12*devicePixelRatio);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(-18*devicePixelRatio,0,24*devicePixelRatio,0);
+  grad.addColorStop(0,'#3b2a8f');
+  grad.addColorStop(1,'#a996ff');
+  ctx.fillStyle = grad;
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(6*devicePixelRatio,0,5*devicePixelRatio,0,Math.PI*2);
+  ctx.fillStyle = '#46E8D6';
+  ctx.fill();
+  ctx.restore();
+}
+
+function draw(){
+  ctx.fillStyle = '#0A0E27';
+  ctx.fillRect(0,0,W,H);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.7)';
+  stars.forEach(s=>{ ctx.globalAlpha = 0.4+Math.random()*0.4; ctx.beginPath(); ctx.arc(s.x,s.y,s.r,0,Math.PI*2); ctx.fill(); });
+  ctx.globalAlpha = 1;
+
+  ctx.strokeStyle = 'rgba(124,92,252,0.12)';
+  ctx.lineWidth = 1;
+  LANE_Y.forEach(y=>{
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(W,y); ctx.stroke();
+  });
+
+  obstacles.forEach(o=>{
+    ctx.save();
+    ctx.translate(o.x,o.y);
+    ctx.rotate(o.spin);
+    if(o.type==='fuel'){
+      ctx.fillStyle = '#46E8D6';
+      ctx.shadowColor = '#46E8D6'; ctx.shadowBlur = 14*devicePixelRatio;
+      ctx.beginPath(); ctx.arc(0,0,o.r*0.7,0,Math.PI*2); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.fillStyle = '#0A0E27';
+      ctx.font = (o.r*0.9)+'px sans-serif';
+      ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('⛽', 0, 1);
+    } else {
+      ctx.fillStyle = '#5b5f7a';
+      ctx.beginPath();
+      for(let i=0;i<7;i++){
+        const ang = i/7*Math.PI*2;
+        const rad = o.r*(0.75+Math.sin(i*3+o.spin)*0.15);
+        const px = Math.cos(ang)*rad, py = Math.sin(ang)*rad;
+        i===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  });
+
+  particles.forEach(p=>{
+    ctx.globalAlpha = Math.max(0,p.life/30);
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(p.x,p.y,3*devicePixelRatio,0,Math.PI*2); ctx.fill();
+  });
+  ctx.globalAlpha = 1;
+
+  if(state !== 'idle') drawRocket(ROCKET_X(), laneY);
+}
+
+function loop(){
+  update();
+  draw();
+  requestAnimationFrame(loop);
+}
+loop();
+</script>
+</body>
+</html>
