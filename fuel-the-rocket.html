@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Fuel the Rocket</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@600;800&family=Rajdhani:wght@500;600;700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#0A0E27;
+    --panel:#141833;
+    --panel-2:#1D2347;
+    --violet:#7C5CFC;
+    --flare:#FF6B4A;
+    --cyan:#46E8D6;
+    --text:#E8ECFB;
+    --text-dim:#8890B5;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none;}
+  html,body{margin:0; padding:0; height:100%; overflow:hidden; background:var(--bg); font-family:'Inter',sans-serif; color:var(--text);}
+  #stars{position:fixed; inset:0; z-index:0;}
+  #stars div{position:absolute; width:2px; height:2px; background:#fff; border-radius:50%; opacity:.5; animation:twinkle 3s infinite ease-in-out;}
+  @keyframes twinkle{0%,100%{opacity:.15}50%{opacity:.8}}
+
+  #app{position:relative; z-index:1; height:100vh; display:flex; flex-direction:column; padding: env(safe-area-inset-top,16px) 16px 0 16px;}
+
+  header{display:flex; justify-content:space-between; align-items:center; padding:6px 2px 10px;}
+  .planet-tag{display:flex; flex-direction:column;}
+  .planet-tag .eyebrow{font-family:'Rajdhani'; font-size:11px; letter-spacing:2px; color:var(--text-dim); text-transform:uppercase;}
+  .planet-tag .name{font-family:'Orbitron'; font-size:16px; font-weight:800; color:var(--cyan);}
+  .rate{text-align:right; font-family:'Rajdhani'; font-size:13px; color:var(--text-dim);}
+  .rate b{color:var(--flare); font-weight:700;}
+
+  .fuel-total{text-align:center; margin-top:2px;}
+  .fuel-total .num{font-family:'Orbitron'; font-size:38px; font-weight:800; letter-spacing:1px; text-shadow:0 0 20px rgba(124,92,252,.6);}
+  .fuel-total .lbl{font-family:'Rajdhani'; font-size:12px; letter-spacing:3px; color:var(--text-dim); text-transform:uppercase;}
+
+  #core-zone{flex:1; display:flex; align-items:center; justify-content:center; position:relative;}
+  #combo{position:absolute; top:8px; font-family:'Rajdhani'; font-weight:700; font-size:14px; color:var(--flare); opacity:0; transition:opacity .2s;}
+  #combo.show{opacity:1;}
+
+  #core-wrap{position:relative; width:220px; height:220px;}
+  svg#ring{position:absolute; inset:0; transform:rotate(-90deg);}
+  svg#ring circle{fill:none; stroke-width:8; stroke-linecap:round;}
+  #ring-bg{stroke:var(--panel-2);}
+  #ring-fg{stroke:var(--cyan); filter:drop-shadow(0 0 6px var(--cyan)); transition:stroke-dashoffset .2s ease-out;}
+
+  #core{position:absolute; inset:22px; border-radius:50%;
+    background:radial-gradient(circle at 35% 30%, #a996ff 0%, var(--violet) 45%, #3b2a8f 100%);
+    box-shadow:0 0 40px rgba(124,92,252,.55), inset 0 0 30px rgba(255,255,255,.25);
+    display:flex; align-items:center; justify-content:center; cursor:pointer;
+    transition:transform .08s ease-out;
+  }
+  #core:active{transform:scale(.94);}
+  #core .rocket{font-size:64px; filter:drop-shadow(0 4px 6px rgba(0,0,0,.4));}
+
+  .float-num{position:absolute; font-family:'Rajdhani'; font-weight:700; font-size:18px; color:var(--cyan); pointer-events:none; animation:floatUp .8s ease-out forwards;}
+  @keyframes floatUp{ to{ transform:translateY(-70px); opacity:0; } }
+
+  #launch-flash{position:fixed; inset:0; background:var(--flare); opacity:0; pointer-events:none; z-index:5;}
+  #launch-flash.go{animation:flash .6s ease-out;}
+  @keyframes flash{0%{opacity:0}20%{opacity:.85}100%{opacity:0}}
+
+  #sheet-toggle{margin:10px 0 8px; background:var(--panel); border:1px solid var(--panel-2); color:var(--text); font-family:'Rajdhani'; font-weight:700; font-size:14px; letter-spacing:1px; padding:12px; border-radius:14px; text-align:center;}
+
+  #sheet{position:fixed; left:0; right:0; bottom:0; background:var(--panel); border-radius:20px 20px 0 0; transform:translateY(100%); transition:transform .25s ease-out; z-index:4; max-height:70vh; overflow-y:auto; padding:14px 16px 24px; box-shadow:0 -10px 40px rgba(0,0,0,.5);}
+  #sheet.open{transform:translateY(0);}
+  #sheet .handle{width:36px; height:4px; background:var(--panel-2); border-radius:2px; margin:0 auto 14px;}
+  #sheet h3{font-family:'Orbitron'; font-size:14px; margin:0 0 12px; color:var(--text-dim); letter-spacing:1px;}
+
+  .upg{display:flex; align-items:center; gap:12px; background:var(--panel-2); border-radius:14px; padding:12px; margin-bottom:10px;}
+  .upg .ico{font-size:26px; width:36px; text-align:center;}
+  .upg .info{flex:1;}
+  .upg .info .t{font-weight:600; font-size:14px;}
+  .upg .info .d{font-family:'Rajdhani'; font-size:12px; color:var(--text-dim);}
+  .upg .buy{background:var(--violet); border:none; color:#fff; font-family:'Rajdhani'; font-weight:700; font-size:13px; padding:9px 14px; border-radius:10px; min-width:74px; text-align:center;}
+  .upg .buy.disabled{background:#3a3f63; color:#8890B5;}
+  .upg .lvl{font-family:'Rajdhani'; font-size:11px; color:var(--cyan); margin-top:2px;}
+
+  #offline-modal{position:fixed; inset:0; background:rgba(10,14,39,.9); z-index:10; display:none; align-items:center; justify-content:center; padding:24px;}
+  #offline-modal .card{background:var(--panel); border-radius:20px; padding:26px 22px; text-align:center; max-width:320px;}
+  #offline-modal .card .big{font-family:'Orbitron'; font-size:28px; color:var(--cyan); margin:10px 0;}
+  #offline-modal button{margin-top:16px; background:var(--violet); border:none; color:#fff; font-family:'Rajdhani'; font-weight:700; padding:12px 28px; border-radius:12px; font-size:15px;}
+</style>
+</head>
+<body>
+<div id="stars"></div>
+<div id="launch-flash"></div>
+
+<div id="app">
+  <header>
+    <div class="planet-tag">
+      <span class="eyebrow">Курс на</span>
+      <span class="name" id="planet-name">Земля → Луна</span>
+    </div>
+    <div class="rate">добыча<br><b id="rate-val">0</b>/сек</div>
+  </header>
+
+  <div class="fuel-total">
+    <div class="num" id="fuel-val">0</div>
+    <div class="lbl">единиц топлива</div>
+  </div>
+
+  <div id="core-zone">
+    <div id="combo">COMBO x1</div>
+    <div id="core-wrap">
+      <svg id="ring" viewBox="0 0 220 220">
+        <circle id="ring-bg" cx="110" cy="110" r="100"/>
+        <circle id="ring-fg" cx="110" cy="110" r="100" stroke-dasharray="628" stroke-dashoffset="628"/>
+      </svg>
+      <div id="core"><div class="rocket">🚀</div></div>
+    </div>
+  </div>
+
+  <div id="sheet-toggle">⚙ УЛУЧШЕНИЯ</div>
+</div>
+
+<div id="sheet">
+  <div class="handle"></div>
+  <h3>СТАНЦИЯ ОБСЛУЖИВАНИЯ</h3>
+  <div id="upg-list"></div>
+</div>
+
+<div id="offline-modal">
+  <div class="card">
+    <div class="eyebrow" style="font-family:'Rajdhani';color:var(--text-dim);letter-spacing:2px;font-size:12px;">ПОКА ВАС НЕ БЫЛО</div>
+    <div class="big" id="offline-amount">+0</div>
+    <div style="font-family:'Rajdhani';color:var(--text-dim);font-size:13px;">дронов продолжали добычу топлива</div>
+    <button id="offline-close">ЗАБРАТЬ</button>
+  </div>
+</div>
+
+<script>
+const tg = window.Telegram ? window.Telegram.WebApp : null;
+if(tg){ tg.ready(); tg.expand(); try{tg.setHeaderColor('#0A0E27'); tg.setBackgroundColor('#0A0E27');}catch(e){} }
+
+// ---------- звёздное поле ----------
+const starsEl = document.getElementById('stars');
+for(let i=0;i<60;i++){
+  const s = document.createElement('div');
+  s.style.left = Math.random()*100+'%';
+  s.style.top = Math.random()*100+'%';
+  s.style.animationDelay = (Math.random()*3)+'s';
+  starsEl.appendChild(s);
+}
+
+// ---------- планеты (прогресс — реальная последовательность целей) ----------
+const PLANETS = [
+  {from:'Земля', to:'Луна', threshold:0},
+  {from:'Луна', to:'Марс', threshold:500},
+  {from:'Марс', to:'Церера', threshold:4000},
+  {from:'Церера', to:'Юпитер', threshold:20000},
+  {from:'Юпитер', to:'Сатурн', threshold:100000},
+  {from:'Сатурн', to:'Уран', threshold:500000},
+  {from:'Уран', to:'Нептун', threshold:2000000},
+  {from:'Нептун', to:'край системы', threshold:10000000},
+];
+
+// ---------- состояние ----------
+let state = {
+  fuel:0,
+  perTap:1,
+  perSec:0,
+  critChance:0.05,
+  drone:0,
+  booster:0,
+  overcharge:0,
+  planetIdx:0,
+  lastTick: Date.now(),
+};
+
+const UPGRADES = {
+  drone:{ name:'Дрон-сборщик', ico:'🛰', desc:'+1 топливо/сек', baseCost:25, costMul:1.16,
+    effect:()=> state.perSec = state.drone*1 },
+  booster:{ name:'Бустер тяги', ico:'🔥', desc:'+1 к силе тапа', baseCost:60, costMul:1.18,
+    effect:()=> state.perTap = 1 + state.booster*1 },
+  overcharge:{ name:'Овердрайв', ico:'⚡', desc:'+3% шанс крита x3', baseCost:150, costMul:1.22,
+    effect:()=> state.critChance = 0.05 + state.overcharge*0.03 },
+};
+
+function cost(key){
+  const u = UPGRADES[key];
+  const lvl = state[key];
+  return Math.ceil(u.baseCost * Math.pow(u.costMul, lvl));
+}
+
+// ---------- сохранение ----------
+function save(){
+  state.lastTick = Date.now();
+  localStorage.setItem('fuel_rocket_save', JSON.stringify(state));
+}
+function load(){
+  const raw = localStorage.getItem('fuel_rocket_save');
+  if(!raw) return;
+  const loaded = JSON.parse(raw);
+  const elapsedSec = Math.min((Date.now() - loaded.lastTick)/1000, 2*3600); // максимум 2 часа офлайн-дохода
+  Object.assign(state, loaded);
+  Object.values(UPGRADES).forEach(u=>u.effect());
+  if(elapsedSec > 10 && state.perSec > 0){
+    const earned = Math.floor(elapsedSec * state.perSec);
+    state.fuel += earned;
+    document.getElementById('offline-amount').textContent = '+'+earned;
+    document.getElementById('offline-modal').style.display = 'flex';
+  }
+}
+
+// ---------- рендер ----------
+const fuelVal = document.getElementById('fuel-val');
+const rateVal = document.getElementById('rate-val');
+const planetName = document.getElementById('planet-name');
+const ringFg = document.getElementById('ring-fg');
+const upgList = document.getElementById('upg-list');
+const CIRC = 628;
+
+function fmt(n){
+  n = Math.floor(n);
+  if(n < 1000) return ''+n;
+  if(n < 1e6) return (n/1e3).toFixed(1)+'K';
+  if(n < 1e9) return (n/1e6).toFixed(2)+'M';
+  return (n/1e9).toFixed(2)+'B';
+}
+
+function currentPlanet(){
+  let idx = 0;
+  for(let i=0;i<PLANETS.length;i++){ if(state.fuel >= PLANETS[i].threshold) idx = i; }
+  return idx;
+}
+
+function render(){
+  fuelVal.textContent = fmt(state.fuel);
+  rateVal.textContent = fmt(state.perSec);
+
+  const idx = currentPlanet();
+  if(idx !== state.planetIdx && idx > state.planetIdx){
+    triggerLaunch();
+  }
+  state.planetIdx = idx;
+  const p = PLANETS[idx];
+  const next = PLANETS[idx+1];
+  planetName.textContent = next ? (p.to + ' → ' + next.to) : 'Вы достигли края системы 🌌';
+
+  if(next){
+    const span = next.threshold - p.threshold;
+    const prog = Math.min(1, (state.fuel - p.threshold)/span);
+    ringFg.style.strokeDashoffset = CIRC - CIRC*prog;
+  } else {
+    ringFg.style.strokeDashoffset = 0;
+  }
+
+  renderUpgrades();
+}
+
+function renderUpgrades(){
+  upgList.innerHTML = '';
+  Object.keys(UPGRADES).forEach(key=>{
+    const u = UPGRADES[key];
+    const c = cost(key);
+    const afford = state.fuel >= c;
+    const row = document.createElement('div');
+    row.className = 'upg';
+    row.innerHTML = `
+      <div class="ico">${u.ico}</div>
+      <div class="info">
+        <div class="t">${u.name}</div>
+        <div class="d">${u.desc}</div>
+        <div class="lvl">Уровень ${state[key]}</div>
+      </div>
+      <div class="buy ${afford?'':'disabled'}" data-key="${key}">${fmt(c)}</div>
+    `;
+    upgList.appendChild(row);
+  });
+  upgList.querySelectorAll('.buy').forEach(btn=>{
+    btn.addEventListener('click', ()=>buy(btn.dataset.key));
+  });
+}
+
+function buy(key){
+  const c = cost(key);
+  if(state.fuel < c) return;
+  state.fuel -= c;
+  state[key] += 1;
+  UPGRADES[key].effect();
+  if(tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+  render(); save();
+}
+
+function triggerLaunch(){
+  const flash = document.getElementById('launch-flash');
+  flash.classList.remove('go'); void flash.offsetWidth; flash.classList.add('go');
+  if(tg && tg.HapticFeedback) tg.HapticFeedback.notificationOccurred('success');
+}
+
+// ---------- тап-механика с комбо ----------
+let comboCount = 0, comboMult = 1, comboTimer = null;
+const comboEl = document.getElementById('combo');
+const core = document.getElementById('core');
+const coreZone = document.getElementById('core-zone');
+
+function spawnFloat(text, x, y){
+  const el = document.createElement('div');
+  el.className = 'float-num';
+  el.textContent = text;
+  el.style.left = x+'px';
+  el.style.top = y+'px';
+  coreZone.appendChild(el);
+  setTimeout(()=>el.remove(), 800);
+}
+
+core.addEventListener('pointerdown', (e)=>{
+  comboCount++;
+  comboMult = Math.min(5, 1 + Math.floor(comboCount/8)*0.5);
+  clearTimeout(comboTimer);
+  comboTimer = setTimeout(()=>{ comboCount=0; comboMult=1; comboEl.classList.remove('show'); }, 1200);
+
+  let gain = state.perTap * comboMult;
+  let crit = false;
+  if(Math.random() < state.critChance){ gain *= 3; crit = true; }
+  state.fuel += gain;
+
+  const rect = core.getBoundingClientRect();
+  const x = (e.clientX - rect.left) + rect.left - coreZone.getBoundingClientRect().left;
+  const y = (e.clientY - rect.top) + rect.top - coreZone.getBoundingClientRect().top;
+  spawnFloat((crit?'КРИТ! +':'+ ')+fmt(gain), x, y-20);
+
+  comboEl.textContent = 'COMBO x'+comboMult.toFixed(1);
+  if(comboMult>1) comboEl.classList.add('show');
+
+  if(tg && tg.HapticFeedback) tg.HapticFeedback.impactOccurred(crit?'heavy':'light');
+
+  render();
+});
+
+// ---------- нижняя шторка ----------
+const sheet = document.getElementById('sheet');
+document.getElementById('sheet-toggle').addEventListener('click', ()=>{
+  sheet.classList.toggle('open');
+});
+
+// ---------- офлайн-модалка ----------
+document.getElementById('offline-close').addEventListener('click', ()=>{
+  document.getElementById('offline-modal').style.display = 'none';
+  save();
+});
+
+// ---------- игровой цикл ----------
+load();
+render();
+setInterval(()=>{
+  if(state.perSec > 0){ state.fuel += state.perSec; render(); }
+}, 1000);
+setInterval(save, 5000);
+window.addEventListener('blur', save);
+</script>
+</body>
+</html>
