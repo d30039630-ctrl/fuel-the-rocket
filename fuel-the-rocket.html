@@ -58,7 +58,7 @@
     <h1>🚀 ROCKET RUN</h1>
     <p>Уворачивайся от астероидов, лови топливные баки. Чем дальше летишь — тем быстрее становится гонка.</p>
     <button id="start-btn">СТАРТ</button>
-    <div class="hint">Тапай сверху / снизу экрана, чтобы сменить полосу</div>
+    <div class="hint">Тапай сверху / снизу экрана, чтобы сменить полосу,удачи:)</div>
   </div>
 </div>
 
@@ -107,7 +107,7 @@ function fmt(n){ return Math.floor(n).toLocaleString('ru-RU'); }
 
 function resetGame(){
   lane = 1; laneY = LANE_Y[1]; targetY = LANE_Y[1];
-  score = 0; speed = 6*devicePixelRatio; spawnTimer=0; spawnInterval=70;
+  score = 0; speed = 3.5*devicePixelRatio; spawnTimer=0; spawnInterval=70;
   obstacles = []; particles = [];
 }
 
@@ -193,7 +193,7 @@ function update(){
   laneY += (targetY - laneY)*0.18;
 
   score += speed/devicePixelRatio*0.06;
-  speed += 0.0025*devicePixelRatio;
+  speed += 0.0012*devicePixelRatio;
   spawnInterval = Math.max(26, 70 - score*0.05);
 
   spawnTimer++;
